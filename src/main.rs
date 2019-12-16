@@ -1,6 +1,6 @@
 mod index;
 
-use git2::{ObjectType, Repository};
+use git2::{Repository};
 use index::{Entry, Index};
 use std::env;
 use std::fs;
@@ -25,28 +25,22 @@ fn build_file_index(index: &mut Index<String>, dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn build_commit_index(index: &mut Index<String>, path: &str) {
+fn build_commit_index(index: &mut Index<String>, path: &str) -> Result<(), git2::Error> {
     let repo = Repository::open(path).unwrap();
 
-    // TODO: Use revwalk or something else to only look at commits
-    let mut count = 0;
-    let odb = repo.odb().unwrap();
-    odb.foreach(|oid| {
-        let object = odb.read(*oid).unwrap();
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+    revwalk.set_sorting(git2::Sort::TIME | git2::Sort::REVERSE);
+    for rev in revwalk {
+        let commit = repo.find_commit(rev?)?;
+        let message = commit.message().unwrap();
+        index.add(
+            message,
+            format!("{} {}", commit.id(), commit.summary().unwrap()),
+        );
+    }
 
-        if object.kind() == ObjectType::Commit {
-            let commit = repo.find_commit(*oid).unwrap();
-            index.add(
-                commit.message().unwrap(),
-                format!("{}\n{}", commit.id(), commit.summary().unwrap()),
-            );
-            count += 1;
-        }
-
-        // Hack to stop the loop once it hits slow blob objects
-        count < 150000
-    })
-    .unwrap();
+    Ok(())
 }
 
 fn main() {
@@ -56,7 +50,7 @@ fn main() {
 
     let now = Instant::now();
     let mut index = Index::<String>::new();
-    build_commit_index(&mut index, &path);
+    build_commit_index(&mut index, &path).expect("Error building index");
     let build_time = now.elapsed().as_millis();
 
     let now = Instant::now();
