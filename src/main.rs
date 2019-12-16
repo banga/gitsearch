@@ -1,6 +1,6 @@
 mod index;
 
-use git2::{Repository};
+use git2::Repository;
 use index::{Entry, Index};
 use std::env;
 use std::fs;
@@ -32,12 +32,23 @@ fn build_commit_index(index: &mut Index<String>, path: &str) -> Result<(), git2:
     revwalk.push_head()?;
     revwalk.set_sorting(git2::Sort::TIME | git2::Sort::REVERSE);
     for rev in revwalk {
-        let commit = repo.find_commit(rev?)?;
-        let message = commit.message().unwrap();
-        index.add(
-            message,
-            format!("{} {}", commit.id(), commit.summary().unwrap()),
-        );
+        let rev = match rev {
+            Ok(rev) => rev,
+            Err(_) => continue,
+        };
+        let commit = match repo.find_commit(rev) {
+            Ok(commit) => commit,
+            Err(_) => continue,
+        };
+        let message = match commit.message() {
+            Some(message) => message,
+            None => continue,
+        };
+        let summary = match commit.summary() {
+            Some(summary) => summary,
+            None => continue,
+        };
+        index.add(message, format!("{} {}", commit.id(), summary));
     }
 
     Ok(())
